@@ -1,6 +1,0 @@
-fun int main() =
-    let n = reduce(op+, 0, {1,2,3}) in
-    let m = reduce(op-, n, {~2,4,~4}) in
-    let o = reduce(op*, m, {2,2}) in
-    let p = reduce(op/, o, {2,8,2}) in
-    write(p)

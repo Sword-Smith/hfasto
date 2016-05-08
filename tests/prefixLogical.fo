@@ -1,9 +1,0 @@
-fun bool write_nl(bool b) =
-  let res = write(b) in
-  let tmp = write("\n") in
-  res
-
-fun bool main() =
-    let n = write_nl(reduce(op&&, true, {true, true, true, false})) in
-    let m = reduce(op||, n, {false, false, false, false, true}) in
-    write_nl(m)

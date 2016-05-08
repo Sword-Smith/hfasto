@@ -1,1 +1,0 @@
-Type error: Unexpected argument to main: int -> int (should be () -> <anything>) at line 2, column 9
