@@ -1,0 +1,12 @@
+fun Maybe Int maybe(Int n) =
+  if (n == 0) then maybe2(Nothing Int)
+  else maybe2(Just Int n)
+
+fun Maybe Int maybe2(Maybe Int mi) =
+  if (mi == Nothing Int) then Just Int 5
+  else Nothing Int
+
+fun Maybe Int main() =
+  let n = read(Int) in
+  let m = maybe(n) in
+  write(m)

@@ -1,0 +1,6 @@
+fun int main() =
+    let n = write(1 + 2) in
+    let m = write(~2 - 2) in
+    let o = write(10 / 2) in
+    let p = write(2 * 3) in
+    write(n*m+o+p)

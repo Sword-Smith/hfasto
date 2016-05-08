@@ -1,0 +1,10 @@
+fun bool write_nl(bool b) =
+  let res = write(b) in
+  let tmp = write("\n") in
+  res
+
+fun bool main() =
+    let n = write_nl(false && true) in
+    let m = write_nl(false || true) in
+    let o = write_nl(!n && m) in
+    write_nl(not o)
