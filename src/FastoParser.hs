@@ -295,8 +295,3 @@ validID :: String -> Parser ()
 validID s =
   when (s `elem` keywords) $ fail "Keywords may not be used as identifiers."
 
--- Testing
-testFP1 = parseProg "fun int fibo(int n) = if n == 0 then 0 else if n ==1 then 1 else fibo(n - 1 ) + fibo(n - 2) fun int main() = let n = read() p = fibo(n) in write(p)"
-
-
-testFP10 = parseProg "fun int main() = 4"
