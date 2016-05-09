@@ -24,3 +24,7 @@ tests/*.asm
 *.rar
 *.tar
 *.zip
+
+# Stack #
+#########
+.stack-work
