@@ -58,6 +58,10 @@ are set by the MipsCodeGenerator in order to observe the calling conventions.
     * Not yet being used by Main.hs. Should be inserted between the FastoParser.hs
 and the FastoCodeGenerator.hs modules.
 
+## Calling Conventions
+
+The calling conventions found in http://www.cs.cornell.edu/courses/cs3410/2012sp/lecture/14-calling-w.pdf is followed at the moment.
+
 ## Installation
 
 You can run
