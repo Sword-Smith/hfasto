@@ -545,6 +545,10 @@ regAllocInst spillingRewrite vtable  (Mips.JR rd) = do
 regAllocInst _ _ (Mips.J l) = do
   incr
   return [Mips.J l]
+  -- The below case causes errors in the loading of registers from the stack
+  -- since the it wraps the lw instructions in store/load instruction lists
+  -- and they may may move the stack pointer. The solution is most likely to
+  -- handle the loadRegister functions seperately thus giving them 
 regAllocInst spillingRewrite vtable (Mips.JAL l) = do-- Here the store and load stuff should be handled. Potentially in a monade?
   regEnv <- get
   i <- incr

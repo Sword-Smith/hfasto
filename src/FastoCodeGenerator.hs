@@ -131,6 +131,10 @@ compileExp retName _ _ (Literal (F.BoolVal False)) = do
   return $ [ADeclInst retName (I.IntVal 0)]
 compileExp retName _ _ (Literal (F.CharVal char)) = do
   return $ [ADeclInst retName (I.IntVal $ ord char)]
+compileExp retName vtable ftable (NegateExp exp1) = do
+  v1Name <- newVar "negate_"
+  e1 <- compileExp v1Name vtable ftable exp1
+  return $ e1 ++ [UDeclInst retName Negate (I.ID v1Name)]
 compileExp retName vtable ftable (PlusExp exp1 exp2) = do
   v1Name <- newVar "plus1_"
   v2Name <- newVar "plus2_"
