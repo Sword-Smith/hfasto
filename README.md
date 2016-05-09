@@ -60,7 +60,11 @@ and the FastoCodeGenerator.hs modules.
 
 ## Installation
 
-The program has to be compiled manually using
+You can run
+```
+stack install
+```
+or compile manually using
 ```
 ghc Main.hs
 ```
