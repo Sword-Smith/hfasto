@@ -22,6 +22,7 @@ data RegEnv = RegEnv { instCount           :: Int,
 type RegAlloc a = State RegEnv a                      
 
 data MipsFunction = MipsFunction { funPrologue :: [] Mips.Instruction,
+                                   funLoadRegs :: [] Mips.Instruction,
                                    funBody     :: [] Mips.Instruction,
                                    funEpilogue :: [] Mips.Instruction
                                  } deriving (Show)
@@ -304,17 +305,18 @@ regAllocInsts :: Int -> [] RealReg -> MipsFunction -> [] Mips.Instruction
 regAllocInsts ncsr rp function =
   let
     pl  = funPrologue function
+    lr  = funLoadRegs function
     bd  = funBody function
     epl = funEpilogue function
   in
-    pl ++ regAllocInstsH (length epl) 0 ncsr rp (bd ++ epl) ++ epl
+    pl ++ regAllocInstsH (length epl) 0 0 ncsr rp lr (bd ++ epl) ++ epl
 
 -- Should this accept an input of type MipsFunction instead?
-regAllocInstsH :: Int -> Int -> Int -> [] RealReg -> [] Mips.Instruction -> [] Mips.Instruction
-regAllocInstsH epilogueLength numOfSpilledRegs numOfCallerSaveRegs' rp insts =
+regAllocInstsH :: Int -> Int -> Int -> Int -> [] RealReg -> [] Mips.Instruction -> [] Mips.Instruction -> [] Mips.Instruction
+regAllocInstsH epilogueLength numOfSpilledRegs lrShiftBytes numOfCallerSaveRegs' rp loadRegsInsts insts =
   let
     spilledVarsIn vt = elem "SPILLED" (map snd vt)
-    (livInSets, livOutSets, killSets, generatedSets) = getLiveness insts
+    (livInSets, livOutSets, killSets, generatedSets) = getLiveness (loadRegsInsts ++ insts)
     interferenceSet = getInterferenceSet livOutSets killSets
     sRegNames = getSRegNames killSets generatedSets
     vtable = colorGraph rp (sRegNames, interferenceSet)
@@ -324,14 +326,16 @@ regAllocInstsH epilogueLength numOfSpilledRegs numOfCallerSaveRegs' rp insts =
       let
         vtableSpill = zip (map fst (filter (\x -> (snd x)== "SPILLED") vtable)) (map show [1..])
         numOfSpilledRegs' = numOfSpilledRegs + (length vtableSpill) 
-        insts'  = evalState (liftM concat (mapM (regAllocInst True vtableSpill ) insts)) (RegEnv 0 [] 0 [])
+        insts'  = evalState (liftM concat (mapM (regAllocInst True vtableSpill ) (loadRegsInsts ++ insts))) (RegEnv 0 [] 0 [])
+        lrShiftBytes' = 4*numOfSpilledRegs' + lrShiftBytes -- could be handled better in a monad, maybe.
       in
         -- Put in check for infinite recursion here.
-        regAllocInstsH epilogueLength numOfSpilledRegs' numOfCallerSaveRegs' rp insts'
+        regAllocInstsH epilogueLength numOfSpilledRegs' lrShiftBytes' numOfCallerSaveRegs' rp loadRegsInsts insts'
     else
       let
         removedEpilogue = take (length insts - epilogueLength) insts
         popSpilledRegs  = [Mips.ADDI "$sp" "$sp" (show (4*numOfSpilledRegs))] -- hardcoding "4" sucks
+        rewrittenlrRegs = lrShift lrShiftBytes loadRegsInsts
         pushSpilledRegs = [Mips.ADDI "$sp" "$sp" (show (-4*numOfSpilledRegs))]
         storeCalleeSave = evalState (storeCalleeSaveRegs vtable) (RegEnv 0 rp numOfCallerSaveRegs' [])
         loadCalleeSave  = evalState (loadCalleeSaveRegs vtable) (RegEnv 0 rp numOfCallerSaveRegs' [])
@@ -339,7 +343,12 @@ regAllocInstsH epilogueLength numOfSpilledRegs numOfCallerSaveRegs' rp insts =
                           (liftM concat (mapM (regAllocInst False vtable) removedEpilogue))
                           (RegEnv 0 rp numOfCallerSaveRegs' livInSets)
       in
-        storeCalleeSave ++ pushSpilledRegs ++ regAllocCode ++ popSpilledRegs ++ loadCalleeSave
+        rewrittenlrRegs ++ storeCalleeSave ++ pushSpilledRegs ++
+        regAllocCode ++ popSpilledRegs ++ loadCalleeSave
+
+lrShift :: Int -> [] Mips.Instruction -> [] Mips.Instruction
+lrShift lrShiftBytes ((Mips.LW reg "$sp" amount):insts) = Mips.LW reg "$sp" (show ((read amount :: Int) + lrShiftBytes)) : (lrShift lrShiftBytes insts)
+lrShift _ _                                             = error $ "lrShift called on non-LW instruction."
         
 
 -- Used for both register allocation and for spill-rewriting 

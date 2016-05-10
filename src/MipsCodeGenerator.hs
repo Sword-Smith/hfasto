@@ -66,7 +66,8 @@ compileFun ncsr rp (Fun (FunHead fid args) insts) =
   let
     function =
       MipsFunction { funPrologue = prologue,
-                     funBody = loadRegisters args ++ concat (map compileExp insts),
+                     funLoadRegs = loadRegisters args,
+                     funBody     = concat (map compileExp insts),
                      funEpilogue = epilogue
                    }
   in
