@@ -89,6 +89,7 @@ epilogue = [Mips.LW "$fp" "$sp" "0",
 saveArgRegs :: [] String -> [] Mips.Instruction
 saveArgRegs args = saveArgRegsH 0 args
 
+-- Allocation of room on stack occurs in compileExp
 saveArgRegsH :: Int -> [] String -> [] Mips.Instruction
 saveArgRegsH _ []         = []
 saveArgRegsH i (arg:args) = if i < 4
@@ -140,11 +141,13 @@ compileExp (FDeclInst target funName args)       =
   let
     n = length args
   in
+    Mips.Comment "FunCallStart" :
     Mips.SUBI "$sp" "$sp" (show (4*n)) :
     saveArgRegs args ++
     [Mips.JAL funName] ++
-    [Mips.XOR target "$v0" zero] ++
-    [Mips.ADDI "$sp" "$sp" (show (4*n))]
+    [Mips.ADDI "$sp" "$sp" (show (4*n))] ++
+    [Mips.Comment "FunCallEnd"] ++
+    [Mips.XOR target "$v0" zero]
 compileExp (ReturnInst retName)             = [Mips.XOR "$v0" retName zero] -- rest happens in function epilogue
 compileExp (IfInst v1 Eq (I.IntVal i ) eqL neqL) = [Mips.XORI "compReg" zero (show i),
                                                     Mips.BNE v1 "compReg" neqL,

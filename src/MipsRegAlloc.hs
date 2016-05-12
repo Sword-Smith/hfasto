@@ -16,7 +16,9 @@ type Vtable = [] (SymReg, RealReg)
 data RegEnv = RegEnv { instCount           :: Int,
                        registerPriority    :: [] RealReg,
                        numOfCallerSaveRegs :: Int,
-                       livenessInSets      :: [] (S.Set Mips.Reg)
+                       livenessInSets      :: [] (S.Set Mips.Reg),
+                       numOfBytesSPShifted :: Int,
+                       liveRegsStored      :: [] RealReg
                      }
              deriving Show
 type RegAlloc a = State RegEnv a                      
@@ -44,6 +46,24 @@ instance Ord Edge where
   Edge (sr1l,sr1r) <= Edge (sr2l,sr2r) = (sr1l < sr2l) || (sr1l == sr2l) && (sr1r <= sr2r)
 
 type Graph = (S.Set SymReg, S.Set Edge)
+
+storeSPShift :: Int -> RegAlloc Int
+storeSPShift n = do
+  regEnv <- get
+  let sps    = numOfBytesSPShifted regEnv
+  put regEnv { numOfBytesSPShifted = sps + n }
+  return $ sps + n
+
+setLiveRegsStored :: [] RealReg -> RegAlloc ()
+setLiveRegsStored rrs = do
+  regEnv <- get
+  put regEnv { liveRegsStored = rrs }
+  return ()
+
+getLiveRegsStored :: RegAlloc ([] RealReg)
+getLiveRegsStored = do
+  regEnv <- get
+  return $ liveRegsStored regEnv
 
 incr :: RegAlloc Int
 incr = do
@@ -326,29 +346,43 @@ regAllocInstsH epilogueLength numOfSpilledRegs lrShiftBytes numOfCallerSaveRegs'
       let
         vtableSpill = zip (map fst (filter (\x -> (snd x)== "SPILLED") vtable)) (map show [1..])
         numOfSpilledRegs' = numOfSpilledRegs + (length vtableSpill) 
-        insts'  = evalState (liftM concat (mapM (regAllocInst True vtableSpill ) (loadRegsInsts ++ insts))) (RegEnv 0 [] 0 [])
+        insts'  = evalState (liftM concat (mapM (regAllocInst True vtableSpill ) (loadRegsInsts ++ insts))) (RegEnv 0 [] 0 [] 0 [])
         lrShiftBytes' = 4*numOfSpilledRegs' + lrShiftBytes -- could be handled better in a monad, maybe.
       in
         -- Put in check for infinite recursion here.
         regAllocInstsH epilogueLength numOfSpilledRegs' lrShiftBytes' numOfCallerSaveRegs' rp loadRegsInsts insts'
     else
       let
-        removedEpilogue = take (length insts - epilogueLength) insts
-        popSpilledRegs  = [Mips.ADDI "$sp" "$sp" (show (4*numOfSpilledRegs))] -- hardcoding "4" sucks
-        rewrittenlrRegs = lrShift lrShiftBytes loadRegsInsts
-        pushSpilledRegs = [Mips.ADDI "$sp" "$sp" (show (-4*numOfSpilledRegs))]
-        storeCalleeSave = evalState (storeCalleeSaveRegs vtable) (RegEnv 0 rp numOfCallerSaveRegs' [])
-        loadCalleeSave  = evalState (loadCalleeSaveRegs vtable) (RegEnv 0 rp numOfCallerSaveRegs' [])
-        regAllocCode    = evalState
-                          (liftM concat (mapM (regAllocInst False vtable) removedEpilogue))
-                          (RegEnv 0 rp numOfCallerSaveRegs' livInSets)
+        removedEpilogue     = take (length insts - epilogueLength) insts
+        popSpilledRegs      = [Mips.ADDI "$sp" "$sp" (show (4*numOfSpilledRegs))] -- hardcoding "4" sucks
+        pushSpilledRegs     = [Mips.ADDI "$sp" "$sp" (show (-4*numOfSpilledRegs))]
+        storeCalleeSave     = evalState (storeCalleeSaveRegs vtable) (RegEnv 0 rp numOfCallerSaveRegs' [] 0 [])
+        numOfCalleeSaveRegs = length $ evalState (getCalleeSaveRegs vtable) (RegEnv 0 rp numOfCallerSaveRegs' [] 0 [])
+        loadCalleeSave      = evalState (loadCalleeSaveRegs vtable) (RegEnv 0 rp numOfCallerSaveRegs' [] 0 [])
+          -- lrShiftBytes is number of spilled regs plus number of stored calleeSave registers plus the
+          -- number of stored callee save registers. Right?
+          -- The question then is, how do we get the latter?
+          -- I could write a wrapper function around regAllocCode that returned this.
+          -- Not clear how regAllocInst should return information about how many
+          -- bytes that the regAlloc upon meeting a JAL has moved the SP.
+          -- The information probably has to be put into the RegEnv monade.
+          -- That will be the 1st strategy!
+        rewrittenlrRegs     = lrShift (lrShiftBytes + numOfCalleeSaveRegs) loadRegsInsts
+        -- It all takes place within the same monade!
+        -- So I only need to extract the number in the end, right?
+        -- I need my own evalState. It must return the list of instructions as well as the 
+        regAllocCode        = evalState
+                                  (liftM concat (mapM (regAllocInst False vtable) (rewrittenlrRegs ++ removedEpilogue)))
+                                  (RegEnv 0 rp numOfCallerSaveRegs' livInSets 0 [])
       in
-        rewrittenlrRegs ++ storeCalleeSave ++ pushSpilledRegs ++
+        storeCalleeSave ++ pushSpilledRegs ++
         regAllocCode ++ popSpilledRegs ++ loadCalleeSave
 
 lrShift :: Int -> [] Mips.Instruction -> [] Mips.Instruction
-lrShift lrShiftBytes ((Mips.LW reg "$sp" amount):insts) = Mips.LW reg "$sp" (show ((read amount :: Int) + lrShiftBytes)) : (lrShift lrShiftBytes insts)
-lrShift _ _                                             = error $ "lrShift called on non-LW instruction."
+lrShift lrShiftBytes ((Mips.LW reg "$sp" amount):insts) =
+  Mips.LW reg "$sp" (show ((read amount :: Int) + lrShiftBytes)) :
+  (lrShift lrShiftBytes insts)
+lrShift _ inst                                          = inst
         
 
 -- Used for both register allocation and for spill-rewriting 
@@ -434,10 +468,10 @@ loadLive :: [] RealReg -> RegAlloc ([] Mips.Instruction)
 loadLive stRegs =
   let n      = length stRegs
   in do
-    mvSP <- setCode $ Mips.ADDI "$sp" "$sp" (show (4*n))
+    mvSP <- setCode $ Mips.ADDI "$sp" "$sp" ('-' : (show (4*n)))    
     callerSaveRegs <- filterM regIsCallerSave stRegs
     let stRegsCode = loadRegistersCode n 0 callerSaveRegs
-    return $ stRegsCode ++ [mvSP]
+    return $ stRegsCode ++ [ mvSP ]
 
 storeLive2 :: [] RealReg -> RegAlloc ([] Mips.Instruction)
 storeLive2 stRegs =
@@ -458,9 +492,14 @@ loadLive2 stRegs =
 -- given the vtable that has been calculated, we should have a function that
 -- stores the callee-save registers which are used by the vtable.
 
+getCalleeSaveRegs :: Vtable -> RegAlloc ([] RealReg)
+getCalleeSaveRegs vt = do
+  stRegs <- filterM regIsCalleeSave $ S.toList $ S.fromList (map snd vt)
+  return stRegs
+
 storeCalleeSaveRegs :: Vtable -> RegAlloc ([] Mips.Instruction)
-storeCalleeSaveRegs vtable = do
-  stRegs <- filterM regIsCalleeSave $ S.toList $ S.fromList (map snd vtable)
+storeCalleeSaveRegs vt = do
+  stRegs <- getCalleeSaveRegs vt
   storeLive2 stRegs
 
 loadCalleeSaveRegs :: Vtable -> RegAlloc ([] Mips.Instruction)
@@ -472,9 +511,6 @@ regAllocInst :: Bool -> Vtable -> Mips.Instruction -> RegAlloc ([] Mips.Instruct
 regAllocInst _spillingRewrite vtable (Mips.Label l) = do
   incr
   return [Mips.Label l]
-regAllocInst spillingRewrite vtable (Mips.Comment s) = do
-  incr
-  return [Mips.Comment s]
 regAllocInst spillingRewrite vtable (Mips.XOR rd rs rt) = do
   rdRes <- mapReg vtable rd
   rsRes <- mapReg vtable rs
@@ -557,16 +593,31 @@ regAllocInst _ _ (Mips.J l) = do
   -- The below case causes errors in the loading of registers from the stack
   -- since the it wraps the lw instructions in store/load instruction lists
   -- and they may may move the stack pointer. The solution is most likely to
-  -- handle the loadRegister functions seperately thus giving them 
-regAllocInst spillingRewrite vtable (Mips.JAL l) = do-- Here the store and load stuff should be handled. Potentially in a monade?
+  -- handle the loadRegister functions seperately thus giving them
+
+regAllocInst spillingRewrite vtable (Mips.JAL l) = do
+  i <- incr
+  return [Mips.JAL l]
+regAllocInst spillingRewrite vtable (Mips.Comment "FunCallStart") = do
   regEnv <- get
   i <- incr
   let sliveRegs = S.toList $ (livenessInSets regEnv !! i)
   rliveRegs <- mapM (mapReg vtable) sliveRegs
-  store <- storeLive (rliveRegs ++ ["$ra"])
-  load  <- loadLive $ rliveRegs  ++ ["$ra"]
+  let rRegsToStore = rliveRegs ++ ["$ra"]
+  store <- storeLive rRegsToStore
+  setLiveRegsStored rRegsToStore  -- needed to remember how much to move SP after funcall
   if spillingRewrite
-    then return [Mips.JAL l]
-    else return $ store ++ [Mips.JAL l] ++ load
-
-
+    then return [ Mips.Comment "FunCallStart" ]
+    else return $ store ++ [ Mips.Comment "FunCallStart" ]
+regAllocInst spillingRewrite vtable (Mips.Comment "FunCallEnd") = do
+  regEnv <- get
+  i <- incr
+  let sliveRegs = S.toList $ (livenessInSets regEnv !! i)
+  rRegsToLoad <- getLiveRegsStored
+  load <- loadLive rRegsToLoad
+  if spillingRewrite
+    then return [ Mips.Comment "FunCallEnd" ]
+    else return $ Mips.Comment "FunCallEnd" : load
+regAllocInst spillingRewrite vtable (Mips.Comment s) = do
+  incr
+  return [Mips.Comment s]
