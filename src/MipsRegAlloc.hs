@@ -65,6 +65,11 @@ getLiveRegsStored = do
   regEnv <- get
   return $ liveRegsStored regEnv
 
+resetLiveRegsStored :: RegAlloc ()
+resetLiveRegsStored = do
+  regEnv <- get
+  put regEnv { liveRegsStored = [] }
+
 incr :: RegAlloc Int
 incr = do
   regEnv <- get
@@ -468,7 +473,7 @@ loadLive :: [] RealReg -> RegAlloc ([] Mips.Instruction)
 loadLive stRegs =
   let n      = length stRegs
   in do
-    mvSP <- setCode $ Mips.ADDI "$sp" "$sp" ('-' : (show (4*n)))    
+    mvSP <- setCode $ Mips.ADDI "$sp" "$sp" ((show (4*n)))    
     callerSaveRegs <- filterM regIsCallerSave stRegs
     let stRegsCode = loadRegistersCode n 0 callerSaveRegs
     return $ stRegsCode ++ [ mvSP ]
@@ -611,9 +616,9 @@ regAllocInst spillingRewrite vtable (Mips.Comment "FunCallStart") = do
     else return $ store ++ [ Mips.Comment "FunCallStart" ]
 regAllocInst spillingRewrite vtable (Mips.Comment "FunCallEnd") = do
   regEnv <- get
-  i <- incr
-  let sliveRegs = S.toList $ (livenessInSets regEnv !! i)
+  incr
   rRegsToLoad <- getLiveRegsStored
+  resetLiveRegsStored
   load <- loadLive rRegsToLoad
   if spillingRewrite
     then return [ Mips.Comment "FunCallEnd" ]

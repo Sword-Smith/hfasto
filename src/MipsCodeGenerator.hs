@@ -117,16 +117,6 @@ loadRegistersH i (arg:args) = if i < 4
                               else Mips.LW arg "$sp" (show (i*4 + 8)) :
                                    loadRegistersH (i + 1) args
 
--- loadRegistersH :: [] String -> [] Mips.Instruction
--- loadRegistersH args =
---   let loadRegistersH (string:strings) i =
---         if (i < 4)
---         then (Mips.XOR string ("$a" ++ [intToDigit i]) zero) : loadRegistersH strings (i+1)
---         else [] -- Here, the registers should be read from mem if compiler is to handle function calls with more than 4 args
---       loadRegistersH (_) _ = []
---   in
---     loadRegistersH args 0
-
 compileExp :: I.Instruction -> [] Mips.Instruction
 compileExp (ADeclInst rd (ID rt))                = [Mips.XOR rd rt zero]
 compileExp (ADeclInst rd (I.IntVal imm))         = [Mips.XORI rd zero (show imm)]

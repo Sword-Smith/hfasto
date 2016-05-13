@@ -1,0 +1,5 @@
+fun int f(int a, int b, int c, int d) =
+  1 * a + 2 * b + 3 * c - 4 * d + 347
+
+fun int main() =
+  write(f(100, 50, 10, ~50))
