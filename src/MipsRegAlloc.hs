@@ -116,16 +116,17 @@ findLabel label insts = findLabelH 0 label insts
 
 getSuccessors :: [] Mips.Instruction -> [] ([] Int)
 getSuccessors insts = getSuccessorsH 0 insts insts
+
+-- Atm a function must end with JR but this can be fixed by imposing the border
+-- condition that the last instruction returns the empty set.
 getSuccessorsH :: Int -> [] Mips.Instruction -> [] Mips.Instruction -> [] ([] Int)
 getSuccessorsH n [] _                               = []
 getSuccessorsH n (Mips.BNE _ _ l : insts) allInsts  = [n + 1, findLabel l allInsts] : getSuccessorsH (n + 1) insts allInsts
 getSuccessorsH n (Mips.JR retaddr : insts) allInsts = [[]]
 getSuccessorsH n (Mips.J l : insts) allInsts  = [findLabel l allInsts] : getSuccessorsH (n + 1) insts allInsts
 getSuccessorsH n (_ : insts) allInsts    = [n + 1] : getSuccessorsH (n + 1) insts allInsts
--- The JAL rule may seem weird but I think it is correct. The callee will return to the next inst and
--- the caller will then need the same liveness information as if there had not been a function call
--- The JAL is covered by the general rule.
--- Making general rules is dangerous since it may miss functions with special
+-- JAL is covered by the last catch-all rule
+-- DEVFIX: Making general rules is dangerous since it may miss functions with special
 -- rules that have not been implemented yet.
 
 generatedRegisters :: Mips.Instruction -> S.Set Mips.Reg
@@ -180,6 +181,7 @@ livenessInH :: Int ->
                [] (S.Set Mips.Reg)
 livenessInH i livenessInOld livenessInNew (sc:scs) (gl:gls) (kl:kls) =
   let pick x = if i <= x
+  -- Prelude.!!: index too large. The following instruction fails when more args in function than regs
                then livenessInOld !! (length livenessInOld - x -1)
                else livenessInNew !! (length livenessInNew - x -1)
       outI = S.unions $ map pick sc

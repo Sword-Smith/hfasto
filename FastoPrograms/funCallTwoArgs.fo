@@ -1,0 +1,5 @@
+fun int f(int x, int y) =
+  4*x + 3*y + 7
+
+fun int main() =
+  write(f(77, 154))
