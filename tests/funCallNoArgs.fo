@@ -1,0 +1,5 @@
+fun int f() =
+  777
+
+fun int main() =
+  write(f())

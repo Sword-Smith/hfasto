@@ -15,7 +15,8 @@ executable hfasto
                        Mips,
                        MipsCodeGenerator,
                        MipsIO,
-                       MipsRegAlloc
+                       MipsRegAlloc,
+                       T.RegAllocTest
   build-depends:       base,
                        attoparsec,
                        text,

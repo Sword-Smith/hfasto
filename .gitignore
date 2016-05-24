@@ -10,7 +10,7 @@
 *.hi
 *.dyn_hi
 *.dyn_o
-tests/*.asm
+FastoPrograms/*.asm
 
 # Packages #
 ############
